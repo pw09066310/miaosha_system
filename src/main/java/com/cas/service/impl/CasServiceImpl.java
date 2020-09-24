@@ -1,11 +1,16 @@
 package com.cas.service.impl;
 
+import com.cas.bean.GlobalParam;
 import com.cas.bean.User;
+import com.cas.mapper.GlobalParamMapper;
 import com.cas.service.CasService;
+import com.cas.util.RedisUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import sun.misc.Unsafe;
 
+import javax.annotation.Resource;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -23,13 +28,20 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class CasServiceImpl implements CasService {
+    //这里相当于库存
+    private AtomicInteger initialize= new AtomicInteger(1);
 
-    private AtomicInteger initialize;
+    @Autowired
+    private RedisUtil redisUtil;
+
     @Override
     public void testCasMulti(User user) {
+        BigDecimal One = new BigDecimal(1);
         while (true) {
-            if(null!=initialize){
-                log.info("停止循环");
+            //先检查库存有木有 如果没有就进行下面的操作
+            Integer param = (Integer) redisUtil.get("kucun");
+            if(param<=0){
+                //log.info("停止循环");
                 break;
             }
             int initControlLocal = initControl;
@@ -59,7 +71,7 @@ public class CasServiceImpl implements CasService {
             if (bGotChanceToInit) {
                 try {
                     log.info("用户user={},获取到竞争锁",user.getUserId());
-                    initialize=new AtomicInteger(789);
+                    redisUtil.decr("kucun",1L);
                 } finally {
                     initControl = 0;
                 }
@@ -84,8 +96,10 @@ public class CasServiceImpl implements CasService {
             //初始化 通过反射
             Field f = Unsafe.class.getDeclaredField("theUnsafe");
             f.setAccessible(true);
+            //获取unsafe
             U = (Unsafe) f.get(null);
             Class<?> k = CasServiceImpl.class;
+            //将 initControl的值初始化给INIT_CONTROL  完成后面的compareAndSwapInt()操作
             INIT_CONTROL = U.objectFieldOffset
                     (k.getDeclaredField("initControl"));
         } catch (Exception e) {
